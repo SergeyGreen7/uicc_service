@@ -3,6 +3,38 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Table 4
+static char* get_file_type(uint8_t file_type) {
+    if (file_type == 0x38 || file_type == 0x78) {
+        return "DF / MF";
+    } else if (file_type == 0x01 || file_type == 0x41) {
+        return "BF";
+    } else if (file_type == 0x02 || file_type == 0x42) {
+        return "FRF";
+    } else if (file_type == 0x06 || file_type == 0x46) {
+        return "CRF";
+    } else if (file_type == 0x11 || file_type == 0x51) {
+        return "KF";
+    } else if (file_type == 0x39 || file_type == 0x79) {
+        return "TF";
+    }
+    return "unknown file type";
+}
+
+// Table 6
+static char* get_lyfe_cycle_state(uint8_t state_id) {
+    if (state_id == 0x03) {
+        return "Init";
+    } else if (state_id == 0x05) {
+        return "Use";
+    } else if (state_id == 0x04) {
+        return "Block";
+    } else if (state_id == 0x0C) {
+        return "Terminate";
+    }
+    return "unknown LCS";
+}
+
 void init_fcp_dscr(struct FcpDscr* dscr) {
     struct FcpDscr tmp = {
         .tag_0x80 = { .tag = 0x80, .tag_size = 0x00, .value = NULL, .value_size = 0 },
@@ -47,13 +79,13 @@ void free_fcp_dscr(struct FcpDscr* dscr) {
 void print_fcp_dscr(struct FcpDscr* dscr) {
     if (dscr->tag_0x80.tag_size > 0) {
         uint16_t file_size = dscr->tag_0x80.value[0] * 16 + dscr->tag_0x80.value[1];
-        printf("tag 0x80 (file size): %hu bytes\n", file_size);
+        printf("tag 0x80 (file size):\n - %hu (0x%x) bytes\n", file_size, file_size);
     }
 
     bool is_kf_flag = false;
     if (dscr->tag_0x82.tag_size > 0) {
         is_kf_flag = dscr->tag_0x82.value[0] == 0x11 || dscr->tag_0x82.value[0] == 0x51;
-        printf("tag 0x82 (file type):\n - file type %hu bytes\n", dscr->tag_0x82.value[0]);
+        printf("tag 0x82 (file type):\n - file type 0x%X (%s)\n", dscr->tag_0x82.value[0], get_file_type(dscr->tag_0x82.value[0]));
         if (dscr->tag_0x82.tag_size > 3) {
             printf(" - record size %hu\n", dscr->tag_0x82.value[3]);
         }
@@ -63,33 +95,33 @@ void print_fcp_dscr(struct FcpDscr* dscr) {
     }
 
     if (dscr->tag_0x83.tag_size > 0) {
-        printf("tag_0x83\n");
-        printf("tag 0x83 (FID): 0x%X%X\n",  dscr->tag_0x83.value[0], dscr->tag_0x83.value[1]);
+        printf("tag_0x83 (FID):\n");
+        printf(" - 0x%02X%02X\n",  dscr->tag_0x83.value[0], dscr->tag_0x83.value[1]);
     }
 
     if (dscr->tag_0x84.tag_size > 0) {
-        printf("tag_0x84 ,dscr->tag_0x84.tag_size = %hu\n", dscr->tag_0x84.tag_size);
-        printf("tag 0x84 (AID): 0x");
-        for (size_t i = 0; i  < dscr->tag_0x84.tag_size; i++) {
-            printf("%X",  dscr->tag_0x84.value[i]);
+        printf("tag_0x84 (AID), tag_size = %hu\n", dscr->tag_0x84.tag_size);
+        printf(" - 0x");
+        for (size_t i = 0; i < dscr->tag_0x84.tag_size; i++) {
+            printf("%02X", dscr->tag_0x84.value[i]);
         }
         printf("\n");
     }
 
     if (dscr->tag_0x88.tag_size > 0) {
-        printf("tag_0x88\n");
-        printf("tag 0x88 (SFI): 0x%X\n", dscr->tag_0x88.value[0]);
+        printf("tag_0x88 (SFI):\n");
+        printf(" - 0x%02X\n", dscr->tag_0x88.value[0]);
     }
 
     if (dscr->tag_0x8A.tag_size > 0) {
-        printf("tag_0x8A\n");
-        printf("tag 0x8A (LCS): 0x%X\n", dscr->tag_0x8A.value[0]);
+        printf("tag_0x8A (LCS): \n");
+        printf(" - 0x%02X (%s)\n", dscr->tag_0x8A.value[0], get_lyfe_cycle_state(dscr->tag_0x8A.value[0]));
     }
 
     if (dscr->tag_0x8B.tag_size > 0) {
-        printf("tag_0x8B\n");
-        printf("tag 0x8B (EF_arr reference): 0x%X%X, record number %hu\n", 
-            dscr->tag_0x8B.value[0], dscr->tag_0x8B.value[1], dscr->tag_0x8B.value[2]);
+        printf("tag_0x8B(EF_arr reference): \n");
+        printf(" - 0x%02X%02X, record number %hu (0x%02X)\n", 
+            dscr->tag_0x8B.value[0], dscr->tag_0x8B.value[1], dscr->tag_0x8B.value[2], dscr->tag_0x8B.value[2]);
     }
 
     if (is_kf_flag) {
@@ -220,4 +252,30 @@ void config_fcp_dscr(struct FcpDscr* dscr, uint8_t* fcp, size_t fcp_size) {
         }
     }
 
+}
+
+bool is_df_md_file_type(struct FcpDscr* dscr) {
+    return dscr->tag_0x82.tag_size > 0 && 
+        (dscr->tag_0x82.value[0] == 0x38 || dscr->tag_0x82.value[0] == 0x78);
+}
+
+bool is_bf_file_type(struct FcpDscr* dscr) {
+    return dscr->tag_0x82.tag_size > 0 && 
+        (dscr->tag_0x82.value[0] == 0x01 || dscr->tag_0x82.value[0] == 0x41);
+}
+
+uint16_t get_fid(struct FcpDscr* dscr) {
+    uint16_t fid = 0;
+    if (dscr->tag_0x83.tag_size > 0) {
+        fid = dscr->tag_0x83.value[0] * 256 + dscr->tag_0x83.value[1];
+    }
+    return fid;
+}
+
+uint16_t get_file_size(struct FcpDscr* dscr) {
+    uint16_t size = 0;
+    if (dscr->tag_0x80.tag_size > 0) {
+        size = dscr->tag_0x80.value[0] * 256 + dscr->tag_0x80.value[1];
+    }
+    return size;
 }

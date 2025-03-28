@@ -2,6 +2,7 @@
 #include <str_utils.h>
 
 #include <string.h>
+#include <utils.h>
 
 static const char cgla_tag[] = "CGLA";
 static const char esimexist_tag[] = "ESIMEXIST";
@@ -14,8 +15,12 @@ void clear_rsp(struct ApduRsp* rsp) {
     rsp->size   = 0;
 }
 
+bool rsp_status_equals(struct ApduRsp* rsp, uint16_t status) {
+    return rsp->sw1 == (status >> 8) && rsp->sw2 == (status & 0xFF);
+}
+
 bool is_rsp_status_ok(struct ApduRsp* rsp) {
-    return rsp->sw1 == 0x90 && rsp->sw2 == 0x00;
+    return rsp_status_equals(rsp, 0x9000);
 }
 
 void print_out_rsp(struct ApduRsp* rsp) {
@@ -50,25 +55,25 @@ int get_esimexist_response(char* msg, size_t msg_size, int* rsp) {
     // printf("ptr = '%s'\n", ptr);
 
     if (ptr == NULL) {
-        printf("wrong response messsage format\n");
+        eprint("wrong response messsage format\n");
         return 1;
     }
 
     offset = strlen(esimexist_tag);
     if (ptr[offset] != ':') {
-        printf("wrong response messsage format\n");
+        eprint("wrong response messsage format\n");
         return 1;
     }
     offset++;
 
     if (ptr[offset] != ' ') {
-        printf("wrong response messsage format\n");
+        eprint("wrong response messsage format\n");
         return 1;
     }
     offset++;
 
     if (ptr[offset] != '1' && ptr[offset] != '0') {
-        printf("wrong response messsage format\n");
+        eprint("wrong response messsage format\n");
         return 1;
     }
     *rsp = ptr[offset] - '0';
@@ -85,19 +90,19 @@ int get_cgla_response(char* msg, size_t msg_size, struct ApduRsp* apdu_rsp) {
     // printf("ptr = '%s'\n", ptr);
 
     if (ptr == NULL) {
-        printf("wrong response messsage format\n");
+        eprint("get_cgla_response(), wrong response messsage format\n");
         return 1;
     }
 
     offset = strlen(cgla_tag);
     if (ptr[offset] != ':') {
-        printf("wrong response messsage format\n");
+        eprint("get_cgla_response(), wrong response messsage format\n");
         return 1;
     }
     offset++;
 
     if (ptr[offset] != ' ') {
-        printf("wrong response messsage format\n");
+        eprint("get_cgla_response(), wrong response messsage format\n");
         return 1;
     }
     offset++;
@@ -110,7 +115,7 @@ int get_cgla_response(char* msg, size_t msg_size, struct ApduRsp* apdu_rsp) {
     offset++;
 
     if (ptr[offset] != '\"') {
-        printf("wrong response messsage format\n");
+        eprint("get_cgla_response(), wrong response messsage format\n");
         return 1;
     }
     offset++;

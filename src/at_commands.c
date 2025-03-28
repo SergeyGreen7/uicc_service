@@ -13,15 +13,21 @@
 #include <apdu_response_parser.h>
 #include <fcp_parser.h>
 #include <uicc_common.h>
+#include <sw_parser.h>
 
-extern int* crypto_app_session_id;
+#include "utils.h"
+
+extern int crypto_app_session_id;
 extern bool read_output_flag;
 extern bool print_out_flag;
 
 #define BUFFER_SIZE 4096
 #define APDU_BUFFER_SIZE 512
 #define FCP_BUFFER_SIZE 512
-#define BINARY_FILE_CHUNK 2
+#define BINARY_FILE_CHUNK 240
+
+// #define WRITE_READ_DATA_TRY_NUM 10
+// #define WRITE_READ_DATA_DELAY_MS 100000
 
 const int num_response_lines_sim_exist = 4;
 const int num_response_lines_open_session_cmd = 4;
@@ -223,7 +229,7 @@ static void add_fcp_tag(uint8_t* fcp, size_t* fcp_size, uint8_t tag, size_t num_
 
 at_cmd_status_t send_message(int fd, char* msg, size_t size) {
     if (BUFFER_SIZE <= size) {
-        printf("Message size is to long\n");
+        eprint("Message size is to long\n");
         return AT_CMD_MES_TOO_LONG;
     }
 
@@ -237,15 +243,19 @@ at_cmd_status_t send_message(int fd, char* msg, size_t size) {
     buffer_in[size] = '\r';
     buffer_in[size+1] = '\0';
 
-    if (print_out_flag) {
-        printf("buffer_in:\n");
-        for (size_t i = 0; i < size+2; i++) {
-            printf("'%d' - '%c'\n", buffer_in[i], buffer_in[i]);
-        }
-    }
+    // if (print_out_flag) {
+    // dprint("buffer_in:\n");
+    // for (size_t i = 0; i < size+2; i++) {
+    //     dprint("'%d' - '%c'\n", buffer_in[i], buffer_in[i]);
+    // }
+    // }
 
-    printf("send message: '%s'\n", msg);
-    write(fd, buffer_in, size+1);
+    dprint(" send message: '%s'\n", msg);
+    ssize_t n = write(fd, buffer_in, size+1);
+    if (n <= 0) {
+        printf("Failed to send data over serail port, error = %i (%s)\n", errno, strerror(errno));
+        return AT_CMD_CONNECTION_ISSUE;
+    }
 
     return AT_CMD_OK;
 }
@@ -263,7 +273,7 @@ static int count_lines(char* msg, size_t size) {
 }
 
 static at_cmd_status_t read_message(int fd, char* msg, size_t* size, int num_lines_ref) {
-    printf("read_message - START\n");
+    // dprint("read_message - START\n");
     // printf("read_output_flag = %d\n", read_output_flag);
 
     if (!read_output_flag) {
@@ -288,20 +298,26 @@ static at_cmd_status_t read_message(int fd, char* msg, size_t* size, int num_lin
         // read_bytes += read(fd, &buffer_out + read_bytes, sizeof(buffer_out));
         // printf("run read()\n");
         ssize_t n = read(fd, &buffer_out[0] + read_bytes, sizeof(buffer_out));
+        // dprint("read_message(), n = %zd\n", n);
+        // eprint("Error during read procedure: error = %i (%s)\n", errno, strerror(errno));
         if (n == -1) {
-            printf("Error during read procedure: error = %i (%s)\n", errno, strerror(errno));
-            return AT_CMD_CONNECTION_LOST;
+            system("ls -la /dev/radio");
+
+            return AT_CMD_CONNECTION_ISSUE;
         } else if (n == 0) {
-            printf("0 bytes read, it seems that connection is lost\n");
-            return AT_CMD_CONNECTION_LOST;
+            eprint("0 bytes read, it seems that connection is lost\n");
+
+            // eprint("try to read one more time\n");
+            // ssize_t n = read(fd, &buffer_out[0] + read_bytes, sizeof(buffer_out));
+            // dprint("read_message(), n = %zd\n", n);
+
+            return AT_CMD_CONNECTION_ISSUE;
         }
         // printf("n = %zd\n", n);
         read_bytes += n;
         // printf("run count_lines()\n");
         int line_num = count_lines(buffer_out, read_bytes);
-        if (print_out_flag) {
-            printf("line_num = %d, num_lines_ref = %d\n", line_num, num_lines_ref);
-        }
+        // dprint("line_num = %d, num_lines_ref = %d\n", line_num, num_lines_ref);
 
         read_flag = !(num_lines_ref == line_num);
         // printf("check_if_contains()\n");
@@ -310,12 +326,12 @@ static at_cmd_status_t read_message(int fd, char* msg, size_t* size, int num_lin
         }
         // printf("while loop again\n");
 
-        if (print_out_flag) {
-            printf("buffer_out = '%s', read_bytes = %d\n", buffer_out, read_bytes);
-            for (size_t i = 0; i < strlen(buffer_out); i++) {
-                printf("'%d' - '%c'\n", buffer_out[i], buffer_out[i]);
-            }
-        }
+        // dprint("read_message(), buffer_out = '%s', read_bytes = %d\n", buffer_out, read_bytes);
+        // if (print_out_flag) {
+        // for (size_t i = 0; i < strlen(buffer_out); i++) {
+        //     dprint("'%d' - '%c'\n", buffer_out[i], buffer_out[i]);
+        // }
+        // }
     }
 
     int nread;
@@ -331,7 +347,7 @@ static at_cmd_status_t read_message(int fd, char* msg, size_t* size, int num_lin
     remove_symb(buffer_out, &buf_size, '\r');
     remove_symb_from_start(buffer_out, &buf_size, '\n');
     remove_symb_from_end(buffer_out, &buf_size, '\n');
-    // printf("buffer_out = '%s'\n", buffer_out);
+    dprint("read_message(), buffer_out = '%s'\n", buffer_out);
     // printf("buffer_out:\n");
     // for (size_t i = 0; i < buf_size; i++) {
     //     printf("'%d' - '%c'\n", buffer_out[i], buffer_out[i]);
@@ -344,7 +360,7 @@ static at_cmd_status_t read_message(int fd, char* msg, size_t* size, int num_lin
 }
 
 int get_at_cmd_open_logical_channel_crypto_app(char* msg, size_t* size) {
-    if (*crypto_app_session_id == -1) {
+    if (crypto_app_session_id == -1) {
         get_at_cmd_open_logical_channel(msg, size, crypto_aid, strlen(crypto_aid));
     } else {
         printf("logical session with crypto app is already opened\n");
@@ -358,62 +374,41 @@ int get_at_cmd_close_logical_channel_crypto_app(char* msg, size_t* size) {
     return 0;
 }
 
-// int open_logical_channel_crypto_app(int fd) {
+// int close_logical_channel_crypto_app(int fd) {
 
-//     printf("open_logical_channel_crypto_app - START\n");
-//     printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+//     printf("close_logical_channel_crypto_app - START\n");
+//     printf("crypto_app_session_id = %d\n", crypto_app_session_id);
 
 //     size_t size = 0;
-//     if (*crypto_app_session_id == -1) {
+//     if (crypto_app_session_id != -1) {
 //         clear_buffer_in();
-//         get_at_cmd_open_logical_channel(buffer_in, &size, crypto_aid, sizeof(crypto_aid)-1);
+//         get_at_cmd_close_logical_channel(buffer_in, &size);
 //     } else {
-//         printf("logical channel with crypto app is already opened\n");
+//         printf("logical channel with crypto app is not opened\n");
 //         return 1;
 //     }
 
-//     printf("open logical channel, command = '%s', size = %zu\n", buffer_in, size);
+//     printf("close logical channel, command = '%s', size = %zu\n", buffer_in, size);
 //     send_message(fd, buffer_in, size);
 
 //     return 0;
 // }
 
-int close_logical_channel_crypto_app(int fd) {
-
-    printf("close_logical_channel_crypto_app - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
-
-    size_t size = 0;
-    if (*crypto_app_session_id != -1) {
-        clear_buffer_in();
-        get_at_cmd_close_logical_channel(buffer_in, &size);
-    } else {
-        printf("logical channel with crypto app is not opened\n");
-        return 1;
-    }
-
-    printf("close logical channel, command = '%s', size = %zu\n", buffer_in, size);
-    send_message(fd, buffer_in, size);
-
-    return 0;
-}
-
-int open_logical_channel_crypto_app_new(int fd) {
-
-    printf("open_logical_channel_crypto_app_new - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+int open_logical_channel_crypto_app(int fd) {
+    dprint("open_logical_channel_crypto_app - START\n");
+    dprint("crypto_app_session_id = %d\n", crypto_app_session_id);
 
     size_t size = 0;
-    if (*crypto_app_session_id == -1) {
+    if (crypto_app_session_id == -1) {
         clear_buffer_in();
         get_at_cmd_open_logical_channel(buffer_in, &size, crypto_aid, strlen(crypto_aid));
     } else {
-        printf("logical channel with crypto app is already opened\n");
-        return 1;
+        dprint("logical channel with crypto app is already opened\n");
+        return 0;
     }
 
     // send data
-    printf("open logical channel, command = '%s', size = %zu\n", buffer_in, size);
+    dprint("open logical channel, command = '%s', size = %zu\n", buffer_in, size);
     send_message(fd, buffer_in, size);
 
     // receive response
@@ -422,21 +417,23 @@ int open_logical_channel_crypto_app_new(int fd) {
     return 0;
 }
 
-int close_logical_channel_crypto_app_new(int fd) {
-    printf("close_logical_channel_crypto_app - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+int close_logical_channel_crypto_app(int fd, bool force_flag) {
+    if (print_out_flag) {
+        dprint("close_logical_channel_crypto_app - START\n");
+        dprint("crypto_app_session_id = %d\n", crypto_app_session_id);
+    }
 
     size_t size = 0;
-    if (*crypto_app_session_id != -1) {
+    if (crypto_app_session_id != -1 || force_flag) {
         clear_buffer_in();
         get_at_cmd_close_logical_channel(buffer_in, &size);
     } else {
-        printf("logical channel with crypto app is not opened\n");
+        eprint("logical channel with crypto app is not opened\n");
         return 1;
     }
 
     // send data
-    printf("close logical channel, command = '%s', size = %zu\n", buffer_in, size);
+    dprint("close logical channel, command = '%s', size = %zu\n", buffer_in, size);
     send_message(fd, buffer_in, size);
 
     // receive response
@@ -462,51 +459,63 @@ int receive_responce_from_check_sim_exist(int fd) {
 
 int receive_responce_from_open_logical_channel_crypto_app(int fd) {
 
-    printf("receive_responce_from_open_logical_channel_crypto_app - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+    if (print_out_flag) {
+        printf("receive_responce_from_open_logical_channel_crypto_app - START\n");
+        printf("crypto_app_session_id = %d\n", crypto_app_session_id);
+    }
 
-    if (*crypto_app_session_id != -1) {
+    if (crypto_app_session_id != -1) {
         return 0;
     }
 
     size_t size = 0;
-    read_message(fd, buffer_out, &size, num_response_lines_open_session_cmd);
-
-    printf("received response on open session cmd = '%s'\n", buffer_out);
-    if (strncmp(buffer_out, ERROR_STR, 5) != 0) {
-        size_t offset = 0;
-        int number = 0;
-        for (size_t i = 0; i < size; i++) {
-            if (is_digit(buffer_out[i])) {
-                number = 10 * number + get_digit(buffer_out[i]);
-            } else {
-                break;
-            }
-        }
-        *crypto_app_session_id = number;
-        printf("number = %d, crypto_app_session_id = %d\n", number, *crypto_app_session_id);
+    int ret = read_message(fd, buffer_out, &size, num_response_lines_open_session_cmd);
+    if (ret != 0) {
+        eprint("receive_responce_from_open_logical_channel_crypto_app(), error on 'read_message' function call\n");
+        return ret;
     }
+
+    dprint("received response on open session cmd = '%s'\n", buffer_out);
+    if (strstr(buffer_out, ERROR_STR) != NULL) {
+        eprint("Failed to open logical channel with Crypto app\n");
+        return 1;
+    }
+
+    size_t offset = 0;
+    int number = 0;
+    for (size_t i = 0; i < size; i++) {
+        if (is_digit(buffer_out[i])) {
+            number = 10 * number + get_digit(buffer_out[i]);
+        } else {
+            break;
+        }
+    }
+    crypto_app_session_id = number;
+    dprint("number = %d, crypto_app_session_id = %d\n", number, crypto_app_session_id);
+    // printf("crypto_app_session_id = %d\n", crypto_app_session_id);
 
     return 0;
 }
 
 int receive_responce_from_close_logical_channel_crypto_app(int fd) {
-    
-    printf("receive_responce_from_close_logical_channel_crypto_app - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
 
-    if (*crypto_app_session_id == -1) {
-        return 0;
-    }
+    // if (print_out_flag) {
+    dprint("receive_responce_from_close_logical_channel_crypto_app - START\n");
+    dprint("crypto_app_session_id = %d\n", crypto_app_session_id);
+    // }
+
+    // if (crypto_app_session_id == -1) {
+    //     return 0;
+    // }
 
     size_t size = 0;
     read_message(fd, buffer_out, &size, num_response_lines_close_session_cmd);
 
-    printf("received response on close session cmd = '%s'\n", buffer_out);
+    dprint("received response on close session cmd = '%s'\n", buffer_out);
     if (strncmp(buffer_out, "OK", 2) == 0) {
-        *crypto_app_session_id = -1;
+        crypto_app_session_id = -1;
     } else {
-        printf("Unknown response = '%s'\n", buffer_out);
+        eprint("Unknown response = '%s'\n", buffer_out);
     }
 
     return 0;
@@ -514,17 +523,13 @@ int receive_responce_from_close_logical_channel_crypto_app(int fd) {
 
 int receive_responce_from_select_aid(int fd) {
     
-    printf("receive_responce_from_select_aid - START\n");
-    printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
-
-    if (*crypto_app_session_id == -1) {
-        return 0;
-    }
+    dprint("receive_responce_from_select_aid - START\n");
+    dprint("crypto_app_session_id = %d\n", crypto_app_session_id);
 
     size_t size = 0;
     read_message(fd, buffer_out, &size, num_response_lines_select_aid_cmd);
 
-    printf("received response on select aid cmd = '%s', size = %zu\n", buffer_out, size);
+    dprint("received response on select aid cmd = '%s', size = %zu\n", buffer_out, size);
 
     return 0;
 }
@@ -534,24 +539,28 @@ int receive_response_from_cgla(int fd, int num_lines) {
     size_t size = 0;
     read_message(fd, buffer_out, &size, num_lines);
 
-    printf("received response on cgla cmd = '%s', size = %zu\n", buffer_out, size);
+    if (print_out_flag) {
+        printf("received response on cgla cmd = '%s', size = %zu\n", buffer_out, size);
+    }
 
     // clear_apdu_rsp();
-    get_cgla_response(buffer_out, size, &apdu_rsp);
+    return get_cgla_response(buffer_out, size, &apdu_rsp);
     // printf("apdu_rsp = '%s', apdu_rsp_size = %zu\n", apdu_rsp, apdu_rsp_size);
 
     // int sw1 = get_int_from_hex(&apdu_rsp[0] + apdu_rsp_size-4, &apdu_rsp[0] + apdu_rsp_size-2);
     // int sw2 = get_int_from_hex(&apdu_rsp[0] + apdu_rsp_size-2, &apdu_rsp[0] + apdu_rsp_size);
     // *rand_num = get_int_from_hex(&apdu_rsp[0], &apdu_rsp[0] + apdu_rsp_size-4);
     // printf("sw1 = %d, sw2 = %d, rand_num = %d\n", sw1, sw2, *rand_num);
-
-    return 0;
 }
 
 int receive_responce_from_get_challenge(int fd, int* rand_num) {
-    printf("receive_responce_from_get_challenge - START\n");
+    dprint("receive_responce_from_get_challenge - START\n");
 
-    receive_response_from_cgla(fd, num_response_lines_get_challenge_cmd);
+    int ret = receive_response_from_cgla(fd, num_response_lines_get_challenge_cmd);
+    if (ret != 0) {
+        eprint("Error on receive CGLA response\n");
+        return ret;
+    }
     // size_t size = 0;
     // read_message(fd, buffer_out, &size, num_response_lines_get_challenge_cmd);
 
@@ -568,20 +577,20 @@ int receive_responce_from_get_challenge(int fd, int* rand_num) {
     int sw2 = apdu_rsp.sw2;
     // *rand_num = *((int*)apdu_rsp.rsp);
     *rand_num = 16777216 * apdu_rsp.rsp[0] + 65536 * apdu_rsp.rsp[1] + 256 * apdu_rsp.rsp[2] + apdu_rsp.rsp[3];
-    printf("sw1 = %d, sw2 = %d, rand_num = %d\n", sw1, sw2, *rand_num);
+    dprint("sw1 = %d, sw2 = %d, rand_num = %d\n", sw1, sw2, *rand_num);
 
     return 0;
 }
 
 int check_se_existance(int fd) {
-    printf("check_se_existance - START\n");
+    dprint("check_se_existance - START\n");
     
     size_t size = 0;
     clear_buffer_in();
     get_at_cmd_sim_exist(buffer_in, &size);
     
     // send data
-    printf("check if sim exists, command = '%s', size = %zu\n", buffer_in, size);
+    dprint("check if sim exists, command = '%s', size = %zu\n", buffer_in, size);
     send_message(fd, buffer_in, size);
     
     // receive response
@@ -591,14 +600,14 @@ int check_se_existance(int fd) {
 }
 
 bool get_se_exist_flag(int fd) {
-    printf("get_se_exist_flag - START\n");
+    dprint("get_se_exist_flag - START\n");
     
     size_t size = 0;
     clear_buffer_in();
     get_at_cmd_sim_exist(buffer_in, &size);
     
     // send data
-    printf("check if sim exists, command = '%s', size = %zu\n", buffer_in, size);
+    dprint("check if sim exists, command = '%s', size = %zu\n", buffer_in, size);
     send_message(fd, buffer_in, size);
     
     // receive response
@@ -606,15 +615,17 @@ bool get_se_exist_flag(int fd) {
 }
 
 at_cmd_status_t do_select_crypto_aid(int fd) {
-    if (*crypto_app_session_id == -1) {
-        printf("Logical channel with crypto app is not opened\n");
+    dprint("crypto_app_session_id = %d\n", crypto_app_session_id);
+
+    if (crypto_app_session_id == -1) {
+        eprint("Logical channel with crypto app is not opened\n");
         return AT_CMD_NO_LOG_CHANNEL;
     }
     at_cmd_status_t status;
 
     clear_apdu();
     get_apdu_select_crypto_app(apdu, &apdu_size);
-    printf("do_select_crypto_aid, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_select_crypto_aid, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     status = do_send_apdu(fd, apdu, apdu_size);
 
@@ -624,7 +635,7 @@ at_cmd_status_t do_select_crypto_aid(int fd) {
     // size_t size = 0;
     // printf("run get_at_cmd_send_apdu()\n");
     // clear_buffer_in();
-    // get_at_cmd_send_apdu(buffer_in, &size, *crypto_app_session_id, apdu, apdu_size);
+    // get_at_cmd_send_apdu(buffer_in, &size, crypto_app_session_id, apdu, apdu_size);
 
     // printf("select crypto aid, command = '%s', size = %zu\n", buffer_in, size);
     // send_message(fd, buffer_in, size);
@@ -634,30 +645,31 @@ at_cmd_status_t do_select_crypto_aid(int fd) {
     size_t size = 0;
     clear_buffer_out();
     status = read_message(fd, buffer_out, &size, num_response_lines_select_aid_cmd);
-    printf("received response on select aid cmd = '%s', size = %zu\n", buffer_out, size);
+    dprint("received response on select aid cmd = '%s', size = %zu\n", buffer_out, size);
 
     return status;
 }
 
 int do_set_lcs_to_use_cur_file(int fd) {
-    if (*crypto_app_session_id == -1) {
-        printf("Logical channel with crypto app is not opened\n");
+    if (crypto_app_session_id == -1) {
+        eprint("Logical channel with crypto app is not opened\n");
         return 1;
     }
 
     clear_apdu();
     get_apdu_set_lcs_use(apdu, &apdu_size);
-    printf("do_set_lcs_to_use_cur_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_set_lcs_to_use_cur_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    return 0;
+    int ret = !is_rsp_status_ok(&apdu_rsp);
+    return ret;
 }
 
 int do_get_random_number(int fd, int* rand_num) {
-    if (*crypto_app_session_id == -1) {
-        printf("Logical channel with crypto app is not opened\n");
+    if (crypto_app_session_id == -1) {
+        eprint("Logical channel with crypto app is not opened\n");
         return 1;
     }
 
@@ -670,7 +682,7 @@ int do_get_random_number(int fd, int* rand_num) {
     //     size_t size = 0;
     //     printf("run get_at_cmd_send_apdu()\n");
     //     clear_buffer_in();
-    //     get_at_cmd_send_apdu(buffer_in, &size, *crypto_app_session_id, apdu, apdu_size);
+    //     get_at_cmd_send_apdu(buffer_in, &size, crypto_app_session_id, apdu, apdu_size);
 
     //     printf("select crypto aid, command = '%s', size = %zu\n", buffer_in, size);
     //     send_message(fd, buffer_in, size);
@@ -682,18 +694,22 @@ int do_get_random_number(int fd, int* rand_num) {
     {
         clear_apdu();
         get_apdu_get_challenge_4_bytes(apdu, &apdu_size);
-        printf("do_get_random_number, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+        dprint("do_get_random_number, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
         
         do_send_apdu(fd, apdu, apdu_size);
         // size_t size = 0;
         // printf("run get_at_cmd_send_apdu()\n");
         // clear_buffer_in();
-        // get_at_cmd_send_apdu(buffer_in, &size, *crypto_app_session_id, apdu, apdu_size);
+        // get_at_cmd_send_apdu(buffer_in, &size, crypto_app_session_id, apdu, apdu_size);
 
         // printf("get challenge with 4 random bytes, command = '%s', size = %zu\n", buffer_in, size);
         // send_message(fd, buffer_in, size);
 
-        receive_responce_from_get_challenge(fd, rand_num);
+        int ret = receive_responce_from_get_challenge(fd, rand_num);
+        if (ret != 0) {
+            eprint("Error on 'receive_responce_from_get_challenge' function call\n");
+            return ret;
+        }
     }
 
     return 0;
@@ -701,11 +717,16 @@ int do_get_random_number(int fd, int* rand_num) {
 
 // int do_send_apdu(int fd, char* apdu, size_t apdu_size, char* rsp, size_t* size) {
 at_cmd_status_t do_send_apdu(int fd, char* apdu, size_t apdu_size) {
+    if (crypto_app_session_id == -1) {
+        eprint("Logical channel with Crypto app is not created\n");
+        return AT_CMD_NO_LOG_CHANNEL;
+    }
+
     size_t size = 0;
     clear_buffer_in();
-    get_at_cmd_send_apdu(buffer_in, &size, *crypto_app_session_id, apdu, apdu_size);
+    get_at_cmd_send_apdu(buffer_in, &size, crypto_app_session_id, apdu, apdu_size);
 
-    printf("do_send_apdu, command = '%s', size = %zu\n", buffer_in, size);
+    dprint("do_send_apdu, command = '%s', size = %zu\n", buffer_in, size);
     return send_message(fd, buffer_in, size);
 }
 
@@ -715,7 +736,8 @@ int do_select_fid_no_rsp(int fd, uint16_t fid) {
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    return 0;
+    int ret = !is_rsp_status_ok(&apdu_rsp);
+    return ret;
 }
 
 int do_select_fid_fcp(int fd, uint16_t fid) {
@@ -724,15 +746,26 @@ int do_select_fid_fcp(int fd, uint16_t fid) {
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    return 0;
+    int ret = !is_rsp_status_ok(&apdu_rsp);
+    return ret;
 }
 
-bool do_check_fid_existence(int fd, uint16_t fid) {
+int do_check_fid_existence(int fd, uint16_t fid, bool* flag) {
     do_select_fid_no_rsp(fd, fid);
-    print_out_rsp(&apdu_rsp);
-    // printf("do_check_fid_existence(), apdu_rsp = '%s', apdu_rsp_size = %zu\n", apdu_rsp, apdu_rsp_size);
 
-    return is_rsp_status_ok(&apdu_rsp);
+    int ret = 0;
+    *flag = false;
+    if (rsp_status_equals(&apdu_rsp, 0x9000)) {
+        *flag = true;
+    } else if (
+        rsp_status_equals(&apdu_rsp, 0x6A82) ||
+        rsp_status_equals(&apdu_rsp, 0x6A83)) {
+        *flag = false;
+    } else {
+        ret = 1;
+    }
+
+    return ret;
 }
 
 int do_create_df(int fd, const struct DirFcp* fcp_dscr) {
@@ -771,17 +804,17 @@ int do_create_df(int fd, const struct DirFcp* fcp_dscr) {
     fcp[fcp_size++] = efarr_fid % 256;
     fcp[fcp_size++] = efarr_line_number;
 
-    // 00E00000126210820238218302DF018A01038B03EF0101
-    // 00840000126210820238218302AABB8A01038B03EFAB01
-
     clear_apdu();
     get_apdu_create_file(apdu, &apdu_size, fcp, fcp_size);
-    printf("do_create_df, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_create_df, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
+    // printf("do_create_df, sw1 = %02X, sw2 = %02X, apdu_rsp = '%s', apdu_rsp_size = %zu\n", 
+    //     apdu_rsp.sw1, apdu_rsp.sw2, apdu_rsp.rsp, apdu_rsp.size);
 
-    return 0;
+    int ret = !is_rsp_status_ok(&apdu_rsp);
+    return ret;
 }
 
 int do_delete_current_fid(int fd) {
@@ -792,10 +825,12 @@ int do_delete_current_fid(int fd) {
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    return 0;
+    int ret = !is_rsp_status_ok(&apdu_rsp);
+    return ret;
 }
 
 int do_create_efarr_file(int fd, const struct EfarrDscr* dscr) {
+    int ret;
     size_t fcp_size = 0;
     uint8_t fcp[FCP_BUFFER_SIZE];
 
@@ -848,19 +883,20 @@ int do_create_efarr_file(int fd, const struct EfarrDscr* dscr) {
 
     clear_apdu();
     get_apdu_create_file(apdu, &apdu_size, fcp, fcp_size);
-    printf("do_create_efarr_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_create_efarr_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during EF.ARR file creation\n");
-        return -1;
+    ret = !is_rsp_status_ok(&apdu_rsp);
+    if (ret != 0) {
+        eprint("Error occured during EF.ARR file creation\n");
+        return ret;
     }
 
-    do_add_record_efarr_file(fd, fid, dscr->records, dscr->num_records, dscr->record_size);
+    ret = do_add_record_efarr_file(fd, fid, dscr->records, dscr->num_records, dscr->record_size);
 
-    return 0;
+    return ret;
 }
 
 int do_add_record_efarr_file(int fd, uint16_t fid, uint8_t* records, uint8_t num_records, uint8_t record_size) {
@@ -871,8 +907,8 @@ int do_add_record_efarr_file(int fd, uint16_t fid, uint8_t* records, uint8_t num
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
     if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during file selection\n");
-        return -1;
+        eprint("Error occured during file selection\n");
+        return 1;
     }
 
     size_t offset = 0;
@@ -886,8 +922,8 @@ int do_add_record_efarr_file(int fd, uint16_t fid, uint8_t* records, uint8_t num
         receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
         if (!is_rsp_status_ok(&apdu_rsp)) {
-            printf("Error occured during APPEND RECORD command\n");
-            return -1;
+            eprint("Error occured during APPEND RECORD command\n");
+            return 1;
         }
     }
 
@@ -964,7 +1000,7 @@ int do_create_kf_file(int fd, const struct KfDscr* dscr) {
 
     clear_apdu();
     get_apdu_create_file(apdu, &apdu_size, fcp, fcp_size);
-    printf("do_create_kf_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_create_kf_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
@@ -1006,6 +1042,7 @@ int do_change_ref_data_kf_file(int fd, uint16_t fid, uint8_t* passwd, size_t pas
 }
 
 int do_create_bf_file(int fd, const struct BfDscr* dscr) {
+    int ret;
     size_t fcp_size = 0;
     uint8_t fcp[FCP_BUFFER_SIZE];
 
@@ -1049,19 +1086,18 @@ int do_create_bf_file(int fd, const struct BfDscr* dscr) {
 
     clear_apdu();
     get_apdu_create_file(apdu, &apdu_size, fcp, fcp_size);
-    printf("do_create_bf_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
+    dprint("do_create_bf_file, apdu = '%s', apdu_size = %zu\n", apdu, apdu_size);
 
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
-    if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during BF file creation\n");
-        return -1;
+    ret = !is_rsp_status_ok(&apdu_rsp);
+    if (ret != 0) {
+        eprint("Error occured during BF file creation\n");
+        return 1;
     }
 
-    do_write_data_into_bf_file(fd, fid, dscr->data, dscr->data_size);
-
-    return 0;
+    return do_write_data_into_bf_file(fd, fid, dscr->data, dscr->data_size);
 }
 
 int do_write_data_into_bf_file(int fd, uint16_t fid, uint8_t* data, size_t data_size) {
@@ -1072,14 +1108,14 @@ int do_write_data_into_bf_file(int fd, uint16_t fid, uint8_t* data, size_t data_
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
     if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during file selection\n");
-        return -1;
+        eprint("Error occured during file selection\n");
+        return 1;
     }
 
     size_t offset = 0;
     while (offset < data_size) {
         size_t data_chunk_size = BINARY_FILE_CHUNK;
-        if (data_chunk_size < data_size-offset) {
+        if (data_chunk_size > data_size-offset) {
             data_chunk_size = data_size-offset;
         }
 
@@ -1091,8 +1127,8 @@ int do_write_data_into_bf_file(int fd, uint16_t fid, uint8_t* data, size_t data_
         receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
         if (!is_rsp_status_ok(&apdu_rsp)) {
-            printf("Error occured during binary update in BF\n");
-            return -1;
+            eprint("Error occured during binary update in BF\n");
+            return 1;
         }
     }
 
@@ -1107,13 +1143,13 @@ int do_read_data_from_bf_file(int fd, uint16_t fid, uint8_t* data, size_t* data_
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
     if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during file selection\n");
+        eprint("Error occured during file selection\n");
         return -1;
     }
     
     struct FcpDscr fcp_dscr;
     config_fcp_dscr(&fcp_dscr, apdu_rsp.rsp, apdu_rsp.size);
-    print_fcp_dscr(&fcp_dscr);
+    // print_fcp_dscr(&fcp_dscr);
     *data_size = fcp_dscr.tag_0x80.value[0] * 256 + fcp_dscr.tag_0x80.value[1];
     free_fcp_dscr(&fcp_dscr);
 
@@ -1125,22 +1161,22 @@ int do_read_data_from_bf_file(int fd, uint16_t fid, uint8_t* data, size_t* data_
     // *data_size = file_size;
     while (offset < *data_size) {
         size_t data_chunk_size = BINARY_FILE_CHUNK;
-        if (data_chunk_size < *data_size-offset) {
+        if (data_chunk_size > *data_size-offset) {
             data_chunk_size = *data_size-offset;
         }
 
         clear_apdu();
         get_apdu_read_binary(apdu, &apdu_size, offset, data_chunk_size);
-        
+
         do_send_apdu(fd, apdu, apdu_size);
         receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
-        
+
         if (!is_rsp_status_ok(&apdu_rsp)) {
-            printf("Error occured during binary update in BF\n");
+            eprint("Error occured during binary update in BF\n");
             return -1;
         }
         
-        memcpy(data, apdu_rsp.rsp, apdu_rsp.size);
+        memcpy(data + offset, apdu_rsp.rsp, apdu_rsp.size);
         offset += data_chunk_size;
     }
 
@@ -1149,29 +1185,53 @@ int do_read_data_from_bf_file(int fd, uint16_t fid, uint8_t* data, size_t* data_
 
 int do_verify_pin(int fd, uint8_t key_id, uint8_t* passwd, size_t passwd_size) {
     clear_apdu();
-    printf("run get_apdu_verify_pin\n");
+    dprint("run get_apdu_verify_pin\n");
     get_apdu_verify_pin(apdu, &apdu_size, key_id, passwd, passwd_size);
 
-    printf("run do_send_apdu\n");
+    dprint("run do_send_apdu\n");
     do_send_apdu(fd, apdu, apdu_size);
     receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
 
     if (!is_rsp_status_ok(&apdu_rsp)) {
-        printf("Error occured during PIN verification\n");
-        return -1;
+        eprint("Error occured during PIN verification\n");
+        return 1;
     }
-    
+
     return 0;
 }
 
-int do_print_all_files(int fd) {
+int do_select_files_cur_dir(int fd, bool first_flag, struct FcpDscr* fcp_dscr) {
+    clear_apdu();
+    if (first_flag) {
+        get_apdu_select_first_file_cur_dir_fcp(apdu, &apdu_size);
+    } else {
+        get_apdu_select_next_file_cur_dir_fcp(apdu, &apdu_size);
+    }
+
+    do_send_apdu(fd, apdu, apdu_size);
+    receive_response_from_cgla(fd, num_response_lines_cgla_cmd);
+
+    if (is_rsp_status_ok(&apdu_rsp)) {
+        config_fcp_dscr(fcp_dscr, apdu_rsp.rsp, apdu_rsp.size);
+    } else {
+        return 1;
+    }
+
+    return 0;
+}
+
+int do_print_all_files_cur_dir(int fd) {
     struct FcpDscr fcp_dscr;
 
+    int cntr = 0;
+    bool first_flag = true;
+    while (do_select_files_cur_dir(fd, first_flag, &fcp_dscr) == 0) {
+        first_flag = false;
+        printf("\nFile #%d:\n", cntr++);
+        print_fcp_dscr(&fcp_dscr);
+        printf("\n");
+    }
 
-    
-    config_fcp_dscr(&fcp_dscr, apdu_rsp.rsp, apdu_rsp.size);
-    print_fcp_dscr(&fcp_dscr);
-    
     free_fcp_dscr(&fcp_dscr);
 
     return 0;

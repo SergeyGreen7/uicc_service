@@ -71,10 +71,33 @@ int main(int argc, char* argv[]) {
         break;
 
         case GET_RAND_NUM_OP_MODE: {
+            
+            int ret;
+            bool flag = is_connection_established();
+            printf("connection flag = %d\n", flag);
+
+            printf("run open_connection_se()\n");
+            ret = open_connection_se();
+            if (ret != 0) {
+                printf("Error on SE connection over serial port\n");
+            } else {
+                printf("SE connection over serial port succedded\n");
+            }
+            
+            ret = open_crypto_lchannel();
+            if (ret != 0) {
+                printf("Error on Crypto logical channel open\n");
+            }
+
             for (int i = 0; i < 10; i++) {
                 int rand_num;
                 int ret = get_random_int(&rand_num);
                 printf("rand_num = %d\n\n", rand_num);
+            }
+
+            ret = close_connection_se();
+            if (ret != 0) {
+                printf("Error on SE close connection\n");
             }
         }
         break;
@@ -87,3 +110,4 @@ int main(int argc, char* argv[]) {
 
     exit(0);
 }
+

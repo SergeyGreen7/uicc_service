@@ -1,2 +1,2 @@
 # uicc_service
-micro UICC driver
+micron SE driver

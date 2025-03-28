@@ -14,11 +14,11 @@
 #include <errno.h> // Error integer and strerror() function
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
-#include <sys/mman.h>
+// #include <sys/mman.h>
 #include <sys/wait.h>
 
 #include "sec_storage.h" 
-
+#include "printer.h"
 
 // #include <uicc_common.h>
 
@@ -33,36 +33,9 @@ static int serial_port = -1;
 typedef int (*WriteFuncPtr)(int);
 typedef int (*ReadFuncPtr)(int);
 
-int *crypto_app_session_id = NULL;
+int crypto_app_session_id = -1;
 bool read_output_flag = true;
 bool print_out_flag = false;
-
-bool is_connection_established() {
-    return serial_port > 0;
-}
-
-// int send_message(char* msg, size_t size) {
-
-//     pid_t pid;
-
-//     if (BUFFER_SIZE <= size) {
-//         perror("Message size is to long\n");
-//         exit(1);
-//     }
-//     memcpy(buffer_in, msg, size);
-//     buffer_in[size] = '\r';
-//     buffer_in[size+1] = '\0';
-
-//     printf("buffer_in:\n");
-//     for (size_t i = 0; i < size+2; i++) {
-//         printf("'%d' - '%c'\n", buffer_in[i], buffer_in[i]);
-//     }
-
-//     printf("send message: '%s'\n", msg);
-//     write(serial_port, buffer_in, size+1);
-
-//     return 0;
-// }
 
 static int count_lines(char* msg, size_t size) {
     // printf("count_lines - START\n");
@@ -113,85 +86,6 @@ static void read_message() {
 
 }
 
-// static void func1() {
-    
-//     bool skip_at_cmd_flag = false;
-//     bool custom_at_cmd_flag = false;
-//     char cmd_input[1024];
-//     char cmd[1024];
-//     int rand_num;
-//     size_t cmd_size = 0;
-//     WriteFuncPtr tx_func;
-//     ReadFuncPtr rx_func;
-//     while (1) {
-//         printf("please enter AT command:\n");
-//         scanf("%s", cmd_input);
-//         printf("input command: ='%s'\n", cmd_input);
-
-//         skip_at_cmd_flag = false;
-//         custom_at_cmd_flag = false;
-//         if (strcmp(cmd_input, "0") == 0) {
-//             printf("cmd_input == 0\n");
-//             skip_at_cmd_flag = true;
-//             printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
-//             get_random_number(serial_port, &rand_num);
-//         } else if (strcmp(cmd_input, "1") == 0) {
-//             printf("cmd_input == 1\n");
-//             // get_at_cmd_open_logical_channel_crypto_app(cmd, &cmd_size);
-//             tx_func = open_logical_channel_crypto_app;
-//             rx_func = receive_responce_from_open_logical_channel_crypto_app;
-//         } else if (strcmp(cmd_input, "2") == 0) {
-//             printf("cmd_input == 2\n");
-//             // get_at_cmd_close_logical_channel_crypto_app(cmd, &cmd_size);
-//             tx_func = close_logical_channel_crypto_app;
-//             rx_func = receive_responce_from_close_logical_channel_crypto_app;
-//         } else if (strcmp(cmd_input, "exit") == 0) {
-//             printf("exit command\n");
-//             close(serial_port);
-//             // kill(pid, SIGKILL);
-//             break;
-//         } else {
-//             custom_at_cmd_flag = true;
-//             cmd_size = strlen(cmd_input);
-//             strcpy(cmd, cmd_input);
-//         }
-        
-//         if (skip_at_cmd_flag) {
-//             continue;
-//         }
-
-//         pid_t pid = fork();
-//         if (pid < 0) {
-//             perror("failed to fork()\n");
-//             exit(1);
-//         }
-
-//         if (pid == 0) {
-//             printf("UICC test - read thread - START\n");
-//             // read_message();
-//             if (custom_at_cmd_flag) {
-//                 read_message();
-//             } else {
-//                 rx_func(serial_port);
-//             }
-//             printf("UICC test - read thread - FINISH\n");
-//             exit(0);
-//         } else {
-//             printf("UICC test - write thread - START\n");
-//             if (custom_at_cmd_flag) {
-//                 printf("command = '%s', size = %zu\n", cmd, cmd_size);
-//                 send_message(serial_port, cmd, cmd_size);
-//             } else {
-//                 tx_func(serial_port);
-//             }
-//             // open_logical_channel_crypto_app(serial_port);
-//             // waitpid(pid, NULL, 0);
-//             printf("UICC test - write thread - FINISH\n");
-//         }
-//         wait(NULL);
-//     }
-// }
-
 static void func2() {
     time_t epoch = 0;
     time(&epoch);
@@ -205,40 +99,49 @@ static void func2() {
     // WriteFuncPtr tx_func;
     // ReadFuncPtr rx_func;
 
-    int user_id = 4;
+    int user_id = 1;
     int file_id = 3;
     uint8_t passwd[8] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
     size_t  passwd_size = sizeof(passwd);
-
-    uint8_t passwd_user[5][8] = {
-        {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01},
-        {0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02},
-        {0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03},
-        {0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},
-        {0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05},
-    };
-    size_t  passwd_size_user[5] = {8, 8, 8, 8, 8};
 
     uint8_t* data_write;
     size_t  data_size_write;
     uint8_t data_read[32000];
     size_t  data_size_read;
+    bool loop_flag = true;
+    
+    // tmp
+    {
+        printf("run open_connection_se\n");
+        open_connection_se();
+    }
+    // tmp
+    {
+        close_crypto_lchannel_force();
+        open_crypto_lchannel();
 
-    while (1) {
+        printf("run select_crypto_aid\n");
+        int ret = select_crypto_aid();
+
+        if (ret != 0) {
+            printf("Error during Crypto AID selection\n");
+            loop_flag = false;
+        }
+    }
+
+    while (loop_flag) {
         printf("please enter AT command:\n");
         scanf("%s", cmd_input);
-        printf("input command: ='%s'\n", cmd_input);
+        printf("input command = '%s'\n", cmd_input);
 
         custom_at_cmd_flag = false;
         if (strcmp(cmd_input, "open_se") == 0) {
             printf("cmd_input == open_se\n");
-            // printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
-            printf("run create_connection_se\n");
-            create_connection_se();
+            printf("run open_connection_se\n");
+            open_connection_se();
             // tx_func = NULL;
         } else if (strcmp(cmd_input, "close_se") == 0) {
             printf("cmd_input == close_se\n");
-            // printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
             printf("run close_connection_se\n");
             close_connection_se();
             // tx_func = NULL;
@@ -248,29 +151,21 @@ static void func2() {
             printf("se exist flag = %d\n", flag);
         } else if (strcmp(cmd_input, "open_crypto") == 0) {
             printf("cmd_input == open_crypto\n");
-            open_log_channel_crypto();
-            // printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+            open_crypto_lchannel();
             // get_random_number(serial_port, &rand_num);
             // printf("rand_num = %d\n", rand_num);
             // tx_func = NULL;
         } else if (strcmp(cmd_input, "close_crypto") == 0) {
             printf("cmd_input == close_crypto\n");
-            close_log_channel_crypto();
-            // printf("crypto_app_session_id = %d\n", *crypto_app_session_id);
+            close_crypto_lchannel();
             // get_random_number(serial_port, &rand_num);
             // printf("rand_num = %d\n", rand_num);
             // tx_func = NULL;
         } else if (strcmp(cmd_input, "select_crypto") == 0) {
-            if (crypto_app_session_id != NULL && *crypto_app_session_id != 1) {
-                *crypto_app_session_id = 1;
-            }
             printf("cmd_input == select_crypto\n");
             int ret = select_crypto_aid();
         } else if (strcmp(cmd_input, "get_rand") == 0) {
             printf("cmd_input == get_rand\n");
-            if (crypto_app_session_id != NULL && *crypto_app_session_id != 1) {
-                *crypto_app_session_id = 1;
-            }
             int ret = get_random_int(&rand_num);
             printf("rand_num = %d\n", rand_num);
         } else if (strcmp(cmd_input, "select_file") == 0) {
@@ -283,7 +178,8 @@ static void func2() {
             printf("cmd_input == exist_file\n");
 
             uint16_t fid = 0xEFAB;
-            bool flag = do_check_fid_existence(serial_port, fid);
+            bool flag;
+            int ret = do_check_fid_existence(serial_port, fid, &flag);
             printf("file exists = %d\n", flag);
         } else if (strcmp(cmd_input, "create_df") == 0) {
             printf("cmd_input == create_df\n");
@@ -304,20 +200,75 @@ static void func2() {
             do_select_fid_no_rsp(serial_port, fid);
             do_delete_current_fid(serial_port);
 
-        } else if (strcmp(cmd_input, "register_user") == 0) {
+        } else if (strncmp(cmd_input, "register_user", 13) == 0) {
             printf("cmd_input == register_user\n");
+
+            if (strlen(cmd_input) == 14) {
+                user_id = get_digit_from_hex(cmd_input[13]);
+                printf("user_id = %d\n", user_id);
+            }
             
             printf("run register_new_user\n");
             int ret = register_new_user(serial_port, user_id, passwd, passwd_size);
 
-        } else if (strcmp(cmd_input, "unregister_user") == 0) {
+        } else if (strncmp(cmd_input, "unregister_user", 15) == 0) {
             printf("cmd_input == unregister_user\n");
             
+            if (strlen(cmd_input) == 16) {
+                user_id = get_digit_from_hex(cmd_input[15]);
+                printf("user_id = %d\n", user_id);
+            }
+
             printf("run unregister_user\n");
             int ret = unregister_user(serial_port, user_id, passwd, passwd_size);
 
-        } else if (strcmp(cmd_input, "create_bf") == 0) {
+        } else if (strncmp(cmd_input, "check_user", 10) == 0) {
+            printf("cmd_input == unregister_user\n");
+            
+            if (strlen(cmd_input) == 11) {
+                user_id = get_digit_from_hex(cmd_input[10]);
+                printf("user_id = %d\n", user_id);
+            }
+
+            printf("run is_user_registered\n");
+            bool flag = false;
+            int ret = is_user_registered(serial_port, user_id, &flag);
+            printf("user %d(0x%02X), register flag = %d \n", user_id, user_id, flag);
+
+        } else if (strncmp(cmd_input, "select_user", 11) == 0) {
+            printf("cmd_input == select_user\n");
+            
+            if (strlen(cmd_input) == 12) {
+                user_id = get_digit_from_hex(cmd_input[11]);
+                printf("user_id = %d\n", user_id);
+            }
+
+            printf("run select_user\n");
+            int ret = select_user(serial_port, user_id);
+
+        } else if (strcmp(cmd_input, "get_users") == 0) {
+            printf("cmd_input == get_users\n");
+
+            printf("run get_list_of_registered_users\n");
+            uint8_t user_ids[128];
+            size_t user_id_size = 0;
+            int ret = get_list_of_registered_users(serial_port, &user_ids[0], &user_id_size);
+            printf("number of registered users = %zu, user IDs:\n", user_id_size);
+            for (size_t i = 0; i < user_id_size; i++) {
+                printf("  0x%02X\n", user_ids[i]);
+            }
+
+        } else if (strncmp(cmd_input, "create_bf", 9) == 0) {
             printf("cmd_input == create_bf\n");
+
+            if (strlen(cmd_input) >= 10) {
+                user_id = get_digit_from_hex(cmd_input[9]);
+                printf("user_id = %d\n", user_id);
+            }
+            if (strlen(cmd_input) >= 11) {
+                file_id = get_digit_from_hex(cmd_input[10]);
+                printf("file_id = %d\n", user_id);
+            }
 
             data_size_write = rand() % 100;
             data_write = malloc(data_size_write);
@@ -327,14 +278,25 @@ static void func2() {
             printf("run unregister_user\n");
             int ret = create_bf_file(serial_port, user_id, file_id, passwd, passwd_size, data_write, data_size_write);
             
-            printf("data saved into file: data_size_write = %zu\n", data_size_write);
-            for (size_t i = 0; i < data_size_write; i++) {
-                printf("data_write[%zu] = %u\n", i, data_write[i]);
+            if (ret == 0) {
+                printf("data saved into file: data_size_write = %zu\n", data_size_write);
+                for (size_t i = 0; i < data_size_write; i++) {
+                    printf("data_write[%zu] = %u\n", i, data_write[i]);
+                }
             }
 
             free(data_write);
-        } else if (strcmp(cmd_input, "read_bf") == 0) {
+        } else if (strncmp(cmd_input, "read_bf", 7) == 0) {
             printf("cmd_input == read_bf\n");
+
+            if (strlen(cmd_input) >= 8) {
+                user_id = get_digit_from_hex(cmd_input[7]);
+                printf("user_id = %d\n", user_id);
+            }
+            if (strlen(cmd_input) >= 9) {
+                file_id = get_digit_from_hex(cmd_input[8]);
+                printf("file_id = %d\n", user_id);
+            }
             
             printf("run unregister_user\n");
             int ret = read_bf_file(serial_port, user_id, file_id, passwd, passwd_size, data_read, &data_size_read);
@@ -343,24 +305,48 @@ static void func2() {
             for (size_t i = 0; i < data_size_read; i++) {
                 printf("data_read[%zu] = %u\n", i, data_read[i]);
             }
-        } else if (strcmp(cmd_input, "delete_bf") == 0) {
+        } else if (strncmp(cmd_input, "delete_bf", 9) == 0) {
             printf("cmd_input == delete_bf\n");
             
+            if (strlen(cmd_input) >= 9) {
+                user_id = get_digit_from_hex(cmd_input[9]);
+                printf("user_id = %d\n", user_id);
+            }
+            if (strlen(cmd_input) >= 10) {
+                file_id = get_digit_from_hex(cmd_input[10]);
+                printf("file_id = %d\n", user_id);
+            }
+
             printf("run delete_bf_file\n");
             int ret = delete_bf_file(serial_port, user_id, file_id, passwd, passwd_size);
-        }
-        else if (strcmp(cmd_input, "2") == 0) {
-            printf("cmd_input == 2\n");
-            // get_at_cmd_close_logical_channel_crypto_app(cmd, &cmd_size);
-            // tx_func = close_logical_channel_crypto_app_new;
-            // rx_func = receive_responce_from_close_logical_channel_crypto_app;
-        } else if (strcmp(cmd_input, "3") == 0) {
-            printf("cmd_input == 3\n");
+        } else if (strncmp(cmd_input, "get_files", 9) == 0) {
+            printf("cmd_input == get_files\n");
+            
+            if (strlen(cmd_input) == 10) {
+                user_id = get_digit_from_hex(cmd_input[9]);
+                printf("user_id = %d\n", user_id);
+            }
+
+            printf("run get_list_of_user_bf_files\n");
+            size_t num_files = 0;
+            uint8_t file_ids[128];
+            uint16_t file_sizes[128];
+            int ret = get_list_of_user_bf_files(serial_port, user_id, file_ids, file_sizes, &num_files);
+            printf("user ID: 0x%02X, number of createde files = %zu, file IDs:\n", user_id, num_files);
+            for (size_t i = 0; i < num_files; i++) {
+                printf("  0x%02X, size = %hu bytes\n", file_ids[i], file_sizes[i]);
+            }
+
+        } else if (strcmp(cmd_input, "print_files") == 0) {
+            printf("cmd_input == print_files\n");
+
+            int ret = do_print_all_files_cur_dir(serial_port);
+        } else if (strcmp(cmd_input, "check_se_exist") == 0) {
+            printf("cmd_input == check_se_exist\n");
             check_se_existance(serial_port);
         } else if (strcmp(cmd_input, "exit") == 0) {
             printf("exit command\n");
             close(serial_port);
-            // kill(pid, SIGKILL);
             break;
         } else {
             custom_at_cmd_flag = true;
@@ -400,7 +386,7 @@ static void func2() {
 }
 
 static int connect_to_se() {
-    printf("connect_to_se - START\n");
+    dprint("connect_to_se - START\n");
 
     // Basic Setup In C
     char name[] = "/dev/radio/atci1";
@@ -412,18 +398,19 @@ static int connect_to_se() {
         if (serial_port > 0) {
             break;
         }
-        printf("Error %i from open: %s, trying to reconnect...\n", errno, strerror(errno));
-        system("ls -la /dev/radio");
+        dprint("Error %i from open: %s, trying to reconnect...\n", errno, strerror(errno));
+        // system("ls -la /dev/radio");
         usleep(RECONNECT_DELAY_MS);
     }
 
     // Check for errors
     if (serial_port < 0) {
-        printf("Error %i from open: %s\n", errno, strerror(errno));
-        system("ls -la /dev/radio");
-        printf("Couldn't open '%s' serial port\n", name);
+        eprint("Error %i from open: %s\n", errno, strerror(errno));
+        // system("ls -la /dev/radio");
+        eprint("Couldn't open '%s' serial port\n", name);
         return errno;
     }
+    dprint("connect_to_se(), serial_port = %d\n", serial_port);
 
     // Configuration Setup
     // Create new termios struct, we call it 'tty' for convention
@@ -447,6 +434,9 @@ static int connect_to_se() {
 
     cfsetispeed(&tty, B115200);
     cfsetospeed(&tty, B115200);
+    // cfsetispeed(&tty, B460800);
+    // cfsetospeed(&tty, B460800);
+
     // tty.c_cflag &= ~PARENB;   // No parity
     // tty.c_cflag &= ~CSTOPB;   // 1 stop bit
     // tty.c_cflag &= ~CSIZE;
@@ -459,7 +449,9 @@ static int connect_to_se() {
         return errno;
     }
 
-    printf("connect_to_se - DONE\n");
+    if (print_out_flag) {
+        printf("connect_to_se - DONE\n");
+    }
 
     return 0;
 }
@@ -470,71 +462,33 @@ void run_interactive_mode(bool read_output, bool print_flag) {
     read_output_flag = read_output;
     print_out_flag = print_flag;
 
-    // char str[] = "   absdasdasd    ";
-    // size_t size1 = strlen(str);
-    // printf("str = '%s', size1 = %zu\n", str, size1);
-    // remove_symb_from_start(str, &size1, ' ');
-    // printf("str = '%s', size1 = %zu\n", str, size1);
-    // remove_symb_from_end(str, &size1, ' ');
-    // printf("str = '%s', size1 = %zu\n", str, size1);
-
-    crypto_app_session_id = (int*)mmap(
-        NULL, sizeof(int), PROT_READ | PROT_WRITE,
-        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    *crypto_app_session_id = -1;
-
-    // // Basic Setup In C
-    // serial_port = open("/dev/radio/atci1", O_RDWR);
-
-    // // Check for errors
-    // if (serial_port < 0) {
-    //     printf("Error %i from open: %s\n", errno, strerror(errno));
-    // }
-
-    // // Configuration Setup
-    // // Create new termios struct, we call it 'tty' for convention
-    // // No need for "= {0}" at the end as we'll immediately write the existing
-    // // config to this struct
-    // struct termios tty;
-
-    // // Read in existing settings, and handle any error
-    // // NOTE: This is important! POSIX states that the struct passed to tcsetattr()
-    // // must have been initialized with a call to tcgetattr() overwise behaviour
-    // // is undefined
-    // if(tcgetattr(serial_port, &tty) != 0) {
-    //     printf("Error %i from tcgetattr: %s\n", errno, strerror(errno));
-    // }
-
-    // cfsetispeed(&tty, B115200);
-    // cfsetospeed(&tty, B115200);
-
-    // // Save tty settings, also checking for error
-    // if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
-    //     printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
-    // }
-
     func2();
-
-    munmap(crypto_app_session_id, sizeof(int));
 
     printf("run_interactive_mode - FINISH\n");
 }
 
-int create_connection_se() {
-    if (serial_port != -1) {
+bool is_connection_established() {
+    return serial_port > 0;
+}
+
+int open_connection_se() {
+    if (is_connection_established()) {
         return 0;
     }
     return connect_to_se();
 }
 
 int close_connection_se() {
-    if (serial_port == -1) {
-        return 0;
+    if (is_connection_established()) {
+        close(serial_port);
+        serial_port = -1;
+        dprint("serail_port = %d\n", serial_port);
     }
-    close(serial_port);
-    serial_port = -1;
-    printf("serail_port = %d\n", serial_port);
     return 0;
+}
+
+int get_serial_port_fd() {
+    return serial_port;
 }
 
 bool is_se_exists() {
@@ -542,34 +496,51 @@ bool is_se_exists() {
     return flag;
 }
 
-int open_log_channel_crypto() {
-    crypto_app_session_id = (int*)mmap(
-        NULL, sizeof(int), PROT_READ | PROT_WRITE,
-        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    *crypto_app_session_id = -1;
+bool logical_channel_opened() {
+    return (crypto_app_session_id != -1);
+}
+
+bool is_crypto_lchannel_opened() {
+    return (crypto_app_session_id != -1);
+}
+
+int open_crypto_lchannel() {
+    if (logical_channel_opened()) {
+        return 0;
+    }
 
     if (!is_connection_established()) {
-        printf("Connection with SE over serial port is not established\n");
+        eprint("Connection with SE over serial port is not established\n");
         return -1;
     }
 
-    printf("run open_logical_channel_crypto_app_new()\n");
-    open_logical_channel_crypto_app_new(serial_port);
+    dprint("run open_logical_channel_crypto_app()\n");
+    return open_logical_channel_crypto_app(serial_port);
+}
 
+int close_crypto_lchannel() {
+    if (!is_connection_established()) {
+        eprint("Connection with SE over serial port is not established\n");
+        return -1;
+    }
+
+    dprint("run close_logical_channel_crypto_app()\n");
+    close_logical_channel_crypto_app(serial_port, false);
+
+    crypto_app_session_id = -1;
     return 0;
 }
 
-int close_log_channel_crypto() {
+int close_crypto_lchannel_force() {
     if (!is_connection_established()) {
-        printf("Connection with SE over serial port is not established\n");
+        eprint("Connection with SE over serial port is not established\n");
         return -1;
     }
 
-    printf("run close_logical_channel_crypto_app_new()\n");
-    close_logical_channel_crypto_app_new(serial_port);
+    dprint("run close_logical_channel_crypto_app()\n");
+    close_logical_channel_crypto_app(serial_port, true);
 
-    munmap(crypto_app_session_id, sizeof(int));
-    crypto_app_session_id = NULL;
+    crypto_app_session_id = -1;
     return 0;
 }
 
@@ -579,7 +550,7 @@ int select_crypto_aid() {
         return -1;
     }
 
-    if (crypto_app_session_id == NULL) {
+    if (crypto_app_session_id == -1) {
         printf("Logical channel with Crypto is not opened\n");
         return -1;
     }
@@ -590,15 +561,16 @@ int select_crypto_aid() {
 
 int get_random_int(int* rand_num) {
     if (!is_connection_established()) {
-        printf("Connection with SE over serial port is not established\n");
-        return -1;
+        eprint("Connection with SE over serial port is not established\n");
+        return 1;
     }
 
-    if (crypto_app_session_id == NULL) {
-        printf("Logical channel with Crypto is not opened\n");
-        return -1;
+    if (crypto_app_session_id == -1) {
+        eprint("\nLogical channel with Crypto app is not opened\n");
+        return 1;
     }
 
+    dprint("\nrun do_get_random_number\n");
     return do_get_random_number(serial_port, rand_num);
 }
 
