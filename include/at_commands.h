@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
+#include <fcp_parser.h>
+
 struct DirFcp {
     uint16_t    fid;
     uint8_t     life_cycle_state;
@@ -56,11 +58,13 @@ typedef int at_cmd_status_t;
 enum AT_CMD_STATUS {
     AT_CMD_OK = 0,
     AT_CMD_MES_TOO_LONG,
-    AT_CMD_CONNECTION_LOST,
+    AT_CMD_CONNECTION_ISSUE,
     AT_CMD_NO_LOG_CHANNEL,
 
     AT_CMD_ERROR,
 };
+
+
 
 
 // open logical channel accorfin to the section 8.45 from TS 27.007 v 15.2.0
@@ -71,10 +75,7 @@ int get_at_cmd_open_logical_channel_crypto_app(char* msg, size_t* size);
 int get_at_cmd_close_logical_channel_crypto_app(char* msg, size_t* size);
 
 int open_logical_channel_crypto_app(int fd);
-int close_logical_channel_crypto_app(int fd);
-
-int open_logical_channel_crypto_app_new(int fd);
-int close_logical_channel_crypto_app_new(int fd);
+int close_logical_channel_crypto_app(int fd, bool force_flag);
 
 int check_se_existance(int fd);
 bool get_se_exist_flag(int fd);
@@ -92,7 +93,7 @@ int receive_responce_from_close_logical_channel_crypto_app(int fd);
 at_cmd_status_t do_send_apdu(int fd, char* apdu, size_t apdu_size);
 int do_select_fid_no_rsp(int fd, uint16_t fid);
 int do_select_fid_fcp(int fd, uint16_t fid);
-bool do_check_fid_existence(int fd, uint16_t fid);
+int do_check_fid_existence(int fd, uint16_t fid, bool* flag);
 
 int do_create_df(int fd, const struct DirFcp* fcp_dscr);
 int do_delete_current_fid(int fd);
@@ -109,7 +110,9 @@ int do_read_data_from_bf_file(int fd, uint16_t fid, uint8_t* data, size_t* data_
 
 int do_verify_pin(int fd, uint8_t key_id, uint8_t* passwd, size_t passwd_size);
 
-int do_print_all_files(int fd);
+int do_select_files_cur_dir(int fd, bool first_flag, struct FcpDscr* fcp_dscr);
+int do_print_all_files_cur_dir(int fd);
+// int do_print_files_cur_dir(int fd);
 
 #endif // _AT_COMMANDS_H_
 

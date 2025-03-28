@@ -4,13 +4,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-int create_connection_se();
+bool is_connection_established();
+int open_connection_se();
 int close_connection_se();
+int get_serial_port_fd();
 
 bool is_se_exists();
 
-int open_log_channel_crypto();
-int close_log_channel_crypto();
+bool is_crypto_lchannel_opened();
+int open_crypto_lchannel();
+int close_crypto_lchannel();
+int close_crypto_lchannel_force();
 
 int select_crypto_aid();
 

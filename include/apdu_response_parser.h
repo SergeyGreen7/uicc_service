@@ -14,6 +14,7 @@ struct ApduRsp {
 };
 
 void clear_rsp(struct ApduRsp* rsp);
+bool rsp_status_equals(struct ApduRsp* rsp, uint16_t status);
 bool is_rsp_status_ok(struct ApduRsp* rsp);
 void print_out_rsp(struct ApduRsp* rsp);
 

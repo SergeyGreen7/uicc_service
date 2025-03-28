@@ -5,6 +5,9 @@
 
 void get_apdu_select_crypto_app(char* str, size_t* size);
 
+void get_apdu_select_first_file_cur_dir_fcp(char* str, size_t* size);
+void get_apdu_select_next_file_cur_dir_fcp(char* str, size_t* size);
+
 void get_apdu_select_fid_no_rsp(char* str, size_t* size, uint16_t fid);
 void get_apdu_select_fid_fcp(char* str, size_t* size, uint16_t fid);
 

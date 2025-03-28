@@ -48,4 +48,9 @@ void free_fcp_dscr(struct FcpDscr* dscr);
 void print_fcp_dscr(struct FcpDscr* dscr);
 void config_fcp_dscr(struct FcpDscr* dscr, uint8_t* fcp, size_t fcp_size);
 
+bool is_df_md_file_type(struct FcpDscr* dscr);
+bool is_bf_file_type(struct FcpDscr* dscr);
+uint16_t get_fid(struct FcpDscr* dscr);
+uint16_t get_file_size(struct FcpDscr* dscr);
+
 #endif // _FCP_PARSER_H_
